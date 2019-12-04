@@ -1,0 +1,29 @@
+[12.02.19 20:57:31] Args: {
+    "batch_size": 64,
+    "char_emb_file": "./data/char_emb.json",
+    "dev_eval_file": "./data/dev_eval.json",
+    "dev_record_file": "./data/dev.npz",
+    "hidden_size": 100,
+    "load_path": "save/train/BiDAF_char-10/best.pth.tar",
+    "max_ans_len": 15,
+    "name": "BiDAF_char",
+    "num_visuals": 10,
+    "num_workers": 4,
+    "save_dir": "./save/test/BiDAF_char-02",
+    "split": "dev",
+    "sub_file": "submission.csv",
+    "test_eval_file": "./data/test_eval.json",
+    "test_record_file": "./data/test.npz",
+    "train_eval_file": "./data/train_eval.json",
+    "train_record_file": "./data/train.npz",
+    "use_squad_v2": true,
+    "word_emb_file": "./data/word_emb.json"
+}
+[12.02.19 20:57:31] Loading embeddings...
+[12.02.19 20:57:34] Building model BiDAF_char...
+[12.02.19 20:57:47] Loading checkpoint from save/train/BiDAF_char-10/best.pth.tar...
+[12.02.19 20:57:47] Building dataset...
+[12.02.19 20:57:48] Evaluating on dev split...
+[12.02.19 20:57:55] Dev NLL: 02.94, F1: 63.90, EM: 60.26, AvNA: 70.01
+[12.02.19 20:57:56] Dev EM: 60.26, F1: 63.90, AvNA: 70.01, F1_A: 69.20, recall: 59.04, precision: 78.09, F1_NA: 67.24
+[12.02.19 20:57:56] Writing submission file to ./save/test/BiDAF_char-02/dev_submission.csv...
