@@ -38,6 +38,117 @@ class Embedding(nn.Module):
 
         return emb
 
+class Embedding_Char(nn.Module):
+    """Embedding layer used by BiDAF, with the character-level component.
+
+    Word-level embeddings are further refined using a 2-layer Highway Encoder
+    (see `HighwayEncoder` class for details).
+
+    Args:
+        word_vectors (torch.Tensor): Pre-trained word vectors. # (word_vocab_size, word_emb_size)
+        char_vectors (torch.Tensor): Random character vectors. # (char_vocab_size, char_emb_size)
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations
+    
+    Remark:
+        'char_vectors' is a randomly initialized matrix of character embeddings
+        'vocab_size' is determined from the training set
+    """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+        super(Embedding_Char, self).__init__()
+        self.drop_prob = drop_prob
+        
+        # word embedding
+        self.word_emb_size = word_vectors.size(1)
+        self.embed = nn.Embedding.from_pretrained(word_vectors)
+        
+        # character embedding
+        self.char_emb_size = char_vectors.size(1)
+        self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze=False)
+        
+        # CNN layer
+        n_filters = self.word_emb_size
+        kernel_size = 5
+        self.cnn = CNN(self.char_emb_size, n_filters, k=kernel_size)
+        
+        self.proj = nn.Linear(2*self.word_emb_size, hidden_size, bias=False)
+        self.hwy = HighwayEncoder(2, hidden_size)
+
+    def forward(self, x_word, x_char):
+        """
+        Return the embedding for the words in a batch of sentences.
+        Computed from the concatenation of a word-based lookup embedding and a character-based CNN embedding
+      
+        Args:
+            'x_word' (torch.Tensor): Tensor of integers of shape (batch_size, seq_len) where
+                each integer is an index into the word vocabulary
+            'x_char' (torch.Tensor): Tensor of integers of shape (batch_size, seq_len, max_word_len) where
+                each integer is an index into the character vocabulary
+
+        Return:
+            'emb' (torch.Tensor): Tensor of shape (batch_size, seq_len, hidden_size)containing the embeddings for each word of the sentences in the batch
+        """
+        
+        # char embedding
+        _, seq_len, max_word_len = x_char.size()
+            # reshape to a batch of characters word-sequence
+        x_char = x_char.view(-1, max_word_len)      # (b = batch_size*seq_len, max_word_len)
+            # character-level embedding
+        emb_char = self.char_embed(x_char)          # (b, max_word_len, char_emb_size)
+            # transpose to match the CNN shape requirements
+        emb_char = emb_char.transpose(1, 2)         # (b, n_channel_in = char_emb_size, max_word_len)
+            # pass through cnn
+        emb_char = self.cnn(emb_char)               # (b, n_channel_out = word_emb_size)
+            # reshape to a batch of sentences of words embeddings
+        emb_char = emb_char.view(-1, seq_len, self.word_emb_size)  # (batch_size, seq_len, word_emb_size)
+    
+        # word embedding
+        emb_word = self.embed(x_word)               # (batch_size, seq_len, word_emb_size)
+        
+        # concatenate the char and word embeddings
+        emb = torch.cat((emb_word, emb_char), 2)    # (batch_size, seq_len, 2*word_emb_size)
+        
+        emb = F.dropout(emb, self.drop_prob, self.training)
+        emb = self.proj(emb)                        # (batch_size, seq_len, hidden_size)
+        emb = self.hwy(emb)                         # (batch_size, seq_len, hidden_size)
+
+        return emb
+        
+class CNN(nn.Module):
+    """Convolutional layer
+    1st stage of computing a word embedding from its char embeddings
+    
+    Remark: process each word in the batch independently
+    """
+    
+    def __init__(self, char_emb_size, f, k=5):
+        """Init CNN
+        
+        Args:
+            'char_emb_size' (int): character Embedding Size (nb of input channels)
+            'f' (int): number of filters (nb of output channels)
+            'k' (int, default=5): kernel (window) size
+        """
+        super(CNN, self).__init__()
+        self.conv1D = nn.Conv1d(char_emb_size, f, k, bias=True)
+     
+    def forward(self, X_reshaped):
+        """Compute the first stage of the word embedding
+        
+        Args:
+            'X_reshaped' (Tensor, shape=(b, char_emb_size, max_word_length)): char-embedded words
+                b = batch of words size
+        
+        Returns:
+            'X_conv_out' (Tensor, shape=(b, f)): output of the convolutional layer
+        """
+        
+        X_conv = self.conv1D(X_reshaped) # (b, f, max_word_length - k +1)
+        
+        # pooling layer to collapse the last dimension
+        X_conv_out, _ = torch.max(F.relu(X_conv), dim=2) # (b, f)
+                
+        return X_conv_out
 
 class HighwayEncoder(nn.Module):
     """Encode an input sequence using a highway network.

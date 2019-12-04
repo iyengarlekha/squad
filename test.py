@@ -21,7 +21,7 @@ import util
 from args import get_test_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF
+from models import BiDAF, BiDAF_char
 from os.path import join
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -43,8 +43,17 @@ def main(args):
 
     # Get model
     log.info('Building model...')
-    model = BiDAF(word_vectors=word_vectors,
-                  hidden_size=args.hidden_size)
+    if 'baseline' in args.name:
+        model = BiDAF(word_vectors=word_vectors,
+                      hidden_size=args.hidden_size)
+
+    elif args.name == 'BiDAF_char':
+        model = BiDAF_char(word_vectors=word_vectors,
+                      char_vectors=char_vectors,
+                      hidden_size=args.hidden_size)
+
+    else:
+        raise NameError('No model named ' + args.name)
     model = nn.DataParallel(model, gpu_ids)
     log.info(f'Loading checkpoint from {args.load_path}...')
     model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
@@ -78,7 +87,17 @@ def main(args):
             batch_size = cw_idxs.size(0)
 
             # Forward
-            log_p1, log_p2 = model(cw_idxs, qw_idxs)
+            if 'baseline' in args.name:
+                log_p1, log_p2 = model(cw_idxs, qw_idxs)
+
+            elif args.name == 'BiDAF_char':
+                # Additional setup for forward
+                cc_idxs = cc_idxs.to(device)
+                qc_idxs = qc_idxs.to(device)
+                log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
+
+            else:
+                raise NameError('No model named ' + args.name)
             y1, y2 = y1.to(device), y2.to(device)
             loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)
